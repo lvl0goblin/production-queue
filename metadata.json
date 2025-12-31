@@ -1,0 +1,5 @@
+{
+  "name": "Production Queue",
+  "description": "A high-performance manufacturing scheduling application with a greedy heuristic engine, real-time Gantt visualization, and shop floor execution tracking.",
+  "requestFramePermissions": []
+}

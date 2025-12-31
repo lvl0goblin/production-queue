@@ -1,0 +1,17 @@
+{
+  "name": "Production Queue",
+  "short_name": "ProdQueue",
+  "description": "High-performance manufacturing scheduling and shop floor execution tracking.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2622/2622312.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
