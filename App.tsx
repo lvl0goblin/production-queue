@@ -68,12 +68,11 @@ const App: React.FC = () => {
     });
   };
 
-  const saveProgress = () => {
-    const toast = document.createElement('div');
-    toast.className = 'fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-4 rounded-3xl shadow-2xl font-black uppercase text-xs tracking-widest z-[200] border border-slate-700 animate-in fade-in slide-in-from-bottom-4';
-    toast.innerHTML = '<i class="fas fa-save text-blue-400 mr-3"></i> Progress Saved';
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2000);
+  const resetAllData = () => {
+    if (window.confirm("CRITICAL ACTION: This will permanently wipe all projects and schedule data. Are you sure?")) {
+      localStorage.removeItem(STORAGE_KEY);
+      window.location.reload();
+    }
   };
 
   const advanceToNextDay = () => {
@@ -152,18 +151,35 @@ const App: React.FC = () => {
             <h1 className="text-lg sm:text-xl font-black tracking-tighter uppercase">Production <span className="text-blue-400">Queue</span></h1>
           </div>
           
-          {/* Mobile "New Project" Button */}
-          <div className="lg:hidden">
+          <div className="flex items-center gap-2 lg:hidden">
+            <button 
+              onClick={resetAllData}
+              className="w-8 h-8 flex items-center justify-center bg-slate-800 text-red-400 rounded-lg border border-slate-700 active:scale-95 transition-all"
+              title="Reset System"
+            >
+              <i className="fas fa-power-off text-xs"></i>
+            </button>
             <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="minimal" />
           </div>
         </div>
         
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="flex-1 sm:flex-none bg-slate-800 px-4 py-1.5 sm:px-6 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-700 flex flex-col items-center">
-            <span className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-0.5 sm:mb-1 text-center">Live Date</span>
+            <span className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-0.5 sm:mb-1 text-center text-nowrap">Live Shift Date</span>
             <span className="font-mono font-black text-blue-400 text-xs sm:text-sm whitespace-nowrap">
                {currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
+          </div>
+
+          <div className="hidden lg:flex items-center gap-2">
+            <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="minimal" />
+            <button 
+              onClick={resetAllData}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-xl border border-slate-700 transition-all text-[10px] font-black uppercase tracking-widest"
+            >
+              <i className="fas fa-power-off"></i>
+              Reset
+            </button>
           </div>
         </div>
       </header>
@@ -183,10 +199,6 @@ const App: React.FC = () => {
           >
             <i className="fas fa-database"></i> Specs & Units
           </button>
-          
-          <div className="mt-auto pt-8 border-t border-slate-100">
-             <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} />
-          </div>
         </nav>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-10">
@@ -317,32 +329,4 @@ const App: React.FC = () => {
                       {state.projects.map(p => (
                           <div key={p.id} className="bg-white rounded-3xl sm:rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden hover:shadow-2xl transition-all">
                               <div className="h-2" style={{ backgroundColor: p.color }}></div>
-                              <div className="p-6 sm:p-8">
-                                  <div className="flex justify-between items-start mb-6">
-                                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{p.name}</h3>
-                                      <button onClick={() => deleteProject(p.id)} className="text-slate-300 hover:text-red-500 transition-all p-2"><i className="fas fa-trash-alt"></i></button>
-                                  </div>
-                                  <div className="space-y-3 sm:space-y-4">
-                                      <div className="flex justify-between text-sm items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                          <span className="text-slate-400 font-bold uppercase text-[9px] sm:text-[10px] tracking-widest">Sets Ordered</span>
-                                          <span className="font-black text-slate-900 text-base sm:text-lg">{p.totalDemand}</span>
-                                      </div>
-                                      <div className="flex justify-between text-sm items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                          <span className="text-slate-400 font-bold uppercase text-[9px] sm:text-[10px] tracking-widest">Target</span>
-                                          <span className="font-black text-slate-900 text-base sm:text-lg">Day {p.deadline}</span>
-                                      </div>
-                                  </div>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-                )}
-            </div>
-          )}
-        </main>
-      </div>
-    </div>
-  );
-};
-
-export default App;
+                              <div className="p-
