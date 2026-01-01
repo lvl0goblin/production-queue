@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Project, ProjectStatus, ScheduleEntry, SchedulerState } from './types';
 import { runScheduler } from './engine';
@@ -329,4 +328,32 @@ const App: React.FC = () => {
                       {state.projects.map(p => (
                           <div key={p.id} className="bg-white rounded-3xl sm:rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden hover:shadow-2xl transition-all">
                               <div className="h-2" style={{ backgroundColor: p.color }}></div>
-                              <div className="p-
+                              <div className="p-6 sm:p-8">
+                                  <div className="flex justify-between items-start mb-6">
+                                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{p.name}</h3>
+                                      <button onClick={() => deleteProject(p.id)} className="text-slate-300 hover:text-red-500 transition-all p-2"><i className="fas fa-trash-alt"></i></button>
+                                  </div>
+                                  <div className="space-y-3 sm:space-y-4">
+                                      <div className="flex justify-between text-sm items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                          <span className="text-slate-400 font-bold uppercase text-[9px] sm:text-[10px] tracking-widest">Sets Ordered</span>
+                                          <span className="font-black text-slate-900 text-base sm:text-lg">{p.totalDemand}</span>
+                                      </div>
+                                      <div className="flex justify-between text-sm items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                          <span className="text-slate-400 font-bold uppercase text-[9px] sm:text-[10px] tracking-widest">Target</span>
+                                          <span className="font-black text-slate-900 text-base sm:text-lg">Day {p.deadline}</span>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+                )}
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default App;
