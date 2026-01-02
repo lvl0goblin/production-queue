@@ -5,7 +5,7 @@ import { PROJECT_COLORS, SESSIONS_PER_DAY } from './constants';
 import GanttChart from './components/GanttChart';
 import ProjectForm from './components/ProjectForm';
 
-const STORAGE_KEY = 'flowcore_mobile_v2';
+const STORAGE_KEY = 'flowcore_mobile_v3';
 
 const App: React.FC = () => {
   const [state, setState] = useState<SchedulerState>(() => {
@@ -24,6 +24,7 @@ const App: React.FC = () => {
       currentDay: 1,
       startDate: new Date().toISOString(),
       completedUnitKeys: [],
+      blockedSessions: [],
     };
   });
 
@@ -33,6 +34,12 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
+
+  const reOptimize = (projects: Project[], statuses: ProjectStatus[], currentDay: number, blocked: number[]) => {
+    const { schedule, error: schedError } = runScheduler(projects, statuses, currentDay, blocked);
+    setError(schedError || null);
+    return schedule;
+  };
 
   const addProject = (p: Project) => {
     const newStatuses: ProjectStatus[] = Object.keys(p.subTimes).map(subName => ({
@@ -45,13 +52,12 @@ const App: React.FC = () => {
     setState(prev => {
       const updatedProjects = [...prev.projects, p];
       const updatedStatuses = [...prev.statuses, ...newStatuses];
-      const { schedule, error: schedError } = runScheduler(updatedProjects, updatedStatuses, prev.currentDay);
-      setError(schedError || null);
+      const newSchedule = reOptimize(updatedProjects, updatedStatuses, prev.currentDay, prev.blockedSessions);
       return {
         ...prev,
         projects: updatedProjects,
         statuses: updatedStatuses,
-        schedule: schedule
+        schedule: newSchedule
       };
     });
     setActiveTab('hub');
@@ -64,6 +70,21 @@ const App: React.FC = () => {
         ? prev.completedUnitKeys.filter(k => k !== unitKey)
         : [...prev.completedUnitKeys, unitKey];
       return { ...prev, completedUnitKeys: newKeys };
+    });
+  };
+
+  const handleManualOverride = (session: number, block: boolean) => {
+    setState(prev => {
+      const newBlocked = block 
+        ? Array.from(new Set([...prev.blockedSessions, session]))
+        : prev.blockedSessions.filter(s => s !== session);
+      
+      const newSchedule = reOptimize(prev.projects, prev.statuses, prev.currentDay, newBlocked);
+      return {
+        ...prev,
+        blockedSessions: newBlocked,
+        schedule: newSchedule
+      };
     });
   };
 
@@ -104,7 +125,7 @@ const App: React.FC = () => {
     const finalStatuses = updatedStatuses.filter(s => !completedProjectIds.includes(s.projectId));
 
     const nextDay = state.currentDay + 1;
-    const { schedule: nextSchedule, error: schedError } = runScheduler(finalProjects, finalStatuses, nextDay);
+    const { schedule: nextSchedule, error: schedError } = runScheduler(finalProjects, finalStatuses, nextDay, []);
 
     if (schedError) {
       setError(schedError);
@@ -117,7 +138,8 @@ const App: React.FC = () => {
       projects: finalProjects,
       statuses: finalStatuses,
       schedule: nextSchedule,
-      completedUnitKeys: [] 
+      completedUnitKeys: [],
+      blockedSessions: [], 
     }));
     setError(null);
   };
@@ -125,11 +147,10 @@ const App: React.FC = () => {
   const exportDailySchedule = () => {
     const todayEntries = state.schedule.filter(s => s.day === state.currentDay);
     if (todayEntries.length === 0) {
-      alert("Nothing scheduled for today.");
+      alert("No active operations today.");
       return;
     }
 
-    // Consolidated units logic for CSV
     const consolidated: any[] = [];
     todayEntries.forEach(entry => {
       const last = consolidated[consolidated.length - 1];
@@ -146,16 +167,22 @@ const App: React.FC = () => {
       }
     });
 
-    let csvContent = "Start Session,End Session,Project,Operation\n";
+    let csvContent = "Start Session,End Session,Asset,Step,Status\n";
     consolidated.forEach(row => {
-      csvContent += `${row.start},${row.end},"${row.projectName}","${row.subName}"\n`;
+      const unitKey = `${row.projectId}-${row.subName}-${row.start}`;
+      const status = state.completedUnitKeys.includes(unitKey) ? "DONE" : "PENDING";
+      csvContent += `${row.start},${row.end},"${row.projectName}","${row.subName}",${status}\n`;
+    });
+
+    state.blockedSessions.sort((a, b) => a - b).forEach(s => {
+      csvContent += `${s},${s},"N/A","LOCKED/MAINTENANCE",N/A\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `FlowCore_Day_${state.currentDay}_Schedule.csv`);
+    link.setAttribute("download", `ShopFloor_D${state.currentDay}_Plan.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -165,19 +192,18 @@ const App: React.FC = () => {
     setState(prev => {
       const updatedProjects = prev.projects.filter(p => p.id !== id);
       const updatedStatuses = prev.statuses.filter(s => s.projectId !== id);
-      const { schedule, error: schedError } = runScheduler(updatedProjects, updatedStatuses, prev.currentDay);
-      setError(schedError || null);
+      const newSchedule = reOptimize(updatedProjects, updatedStatuses, prev.currentDay, prev.blockedSessions);
       return {
         ...prev,
         projects: updatedProjects,
         statuses: updatedStatuses,
-        schedule: schedule
+        schedule: newSchedule
       };
     });
   };
 
   const resetAll = () => {
-    if(confirm("Wipe all project data and start over?")) {
+    if(confirm("Factory Reset: Wipe all projects and history?")) {
       localStorage.removeItem(STORAGE_KEY);
       window.location.reload();
     }
@@ -199,7 +225,6 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 select-none overflow-hidden touch-none">
       
-      {/* Dynamic Header */}
       <header className="flex-none h-24 flex items-center justify-between px-6 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 z-50 pt-safe">
         <div className="flex flex-col">
           <div className="flex items-center gap-2 mb-0.5">
@@ -216,7 +241,6 @@ const App: React.FC = () => {
           <button 
             onClick={exportDailySchedule}
             className="w-11 h-11 flex items-center justify-center rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 active:scale-90 transition-all"
-            title="Download CSV"
           >
             <i className="fas fa-file-export text-sm"></i>
           </button>
@@ -229,68 +253,66 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Primary Viewport */}
       <main className="flex-1 overflow-hidden relative">
         <div className="h-full overflow-y-auto custom-scrollbar p-5 pb-40 touch-pan-y">
           
           {activeTab === 'hub' && (
             <div className="space-y-6 animate-in fade-in duration-500">
               
-              {/* Alert System */}
               {(error || criticalProjects.length > 0) && (
                 <div className="space-y-3">
                   {error && (
-                    <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-3xl flex items-center gap-4 shadow-lg">
+                    <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-3xl flex items-center gap-4">
                       <i className="fas fa-triangle-exclamation text-red-500"></i>
-                      <p className="text-[11px] font-black text-red-200 uppercase leading-snug">{error}</p>
+                      <p className="text-[11px] font-black text-red-200 uppercase">{error}</p>
                     </div>
                   )}
                   {criticalProjects.map(p => (
-                    <div key={p.id} className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-3xl flex items-center gap-4 shadow-lg">
+                    <div key={p.id} className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-3xl flex items-center gap-4">
                       <i className="fas fa-stopwatch text-amber-500"></i>
-                      <p className="text-[11px] font-black text-amber-200 uppercase leading-snug">{p.name} DEADLINE EXPIRED</p>
+                      <p className="text-[11px] font-black text-amber-200 uppercase">{p.name} DEADLINE ALERT</p>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Action Bar */}
-              <div className="bg-indigo-600/10 border-2 border-indigo-600/20 p-6 rounded-[2.5rem] flex items-center justify-between gap-6 shadow-2xl shadow-indigo-950/20">
+              <div className="bg-indigo-600/10 border-2 border-indigo-600/20 p-6 rounded-[2.5rem] flex items-center justify-between gap-6 shadow-2xl">
                 <div className="flex-1">
                   <h3 className="text-xs font-black uppercase text-white tracking-[0.2em] mb-1">Shift Progression</h3>
-                  <p className="text-[10px] text-indigo-300/60 font-bold leading-tight">Advance to next operational session</p>
+                  <p className="text-[10px] text-indigo-300/60 font-bold leading-tight">Sync completed units to next day</p>
                 </div>
                 <button 
                   onClick={advanceToNextDay}
-                  className="bg-indigo-600 active:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-600/40 active:scale-[0.93] transition-all"
+                  className="bg-indigo-600 active:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.93] transition-all"
                 >
-                  Start Day
+                  Start New Day
                 </button>
               </div>
 
-              {/* Data Cards */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-900/40 border border-slate-800/60 p-5 rounded-[2rem] shadow-lg">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Active Slots</span>
-                  <div className="text-4xl font-black text-white mt-2 font-mono">
-                    {state.schedule.filter(s => s.day === state.currentDay).length}
-                  </div>
-                </div>
-                <div className="bg-slate-900/40 border border-slate-800/60 p-5 rounded-[2rem] shadow-lg">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Project Load</span>
-                  <div className="text-4xl font-black text-white mt-2 font-mono">{state.projects.length}</div>
-                </div>
-              </div>
-
-              {/* Gantt Area */}
-              <div className="h-[60vh] w-full relative">
+              <div className="h-[65vh] w-full relative">
                 <GanttChart 
                   schedule={state.schedule} 
                   currentDay={state.currentDay} 
                   startDate={state.startDate}
                   completedUnitKeys={state.completedUnitKeys}
+                  blockedSessions={state.blockedSessions}
                   onToggleUnit={toggleUnitCompletion}
+                  onManualOverride={handleManualOverride}
                 />
+              </div>
+
+              <div className="p-4 bg-slate-900/40 rounded-3xl border border-slate-800">
+                <h5 className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3 ml-2">Override Legend</h5>
+                <div className="flex gap-6 px-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-indigo-500/20 border border-indigo-500/40"></div>
+                    <span className="text-[10px] font-black text-slate-400">TAP SLOT TO BLOCK</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-emerald-500 shadow-sm"></div>
+                    <span className="text-[10px] font-black text-slate-400">TAP OP TO FINISH</span>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -298,20 +320,19 @@ const App: React.FC = () => {
           {activeTab === 'specs' && (
             <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
               <h2 className="text-2xl font-black italic uppercase tracking-tighter ml-2">Project Queue</h2>
-
               {state.projects.length === 0 ? (
-                <div className="py-24 flex flex-col items-center justify-center opacity-30 text-center px-10">
+                <div className="py-24 flex flex-col items-center justify-center opacity-30 text-center">
                   <i className="fas fa-microchip text-7xl mb-6"></i>
-                  <p className="text-sm font-black uppercase tracking-[0.3em] leading-relaxed">No active blueprints detected in system</p>
+                  <p className="text-sm font-black uppercase tracking-[0.3em]">No active blueprints</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {state.projects.map(p => (
-                    <div key={p.id} className="bg-slate-900/60 border border-slate-800 p-6 rounded-[2.5rem] relative overflow-hidden group">
+                    <div key={p.id} className="bg-slate-900/60 border border-slate-800 p-6 rounded-[2.5rem] relative">
                       <div className="flex items-center justify-between mb-5">
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-white/5" style={{ backgroundColor: p.color }}></div>
-                          <h4 className="font-black text-xl tracking-tight text-white">{p.name}</h4>
+                          <div className="w-10 h-10 rounded-xl shadow-lg border border-white/5" style={{ backgroundColor: p.color }}></div>
+                          <h4 className="font-black text-xl text-white">{p.name}</h4>
                         </div>
                         <button 
                           onClick={() => confirm(`Wipe project ${p.name}?`) && deleteProject(p.id)}
@@ -323,11 +344,11 @@ const App: React.FC = () => {
 
                       <div className="grid grid-cols-2 gap-3 mb-6">
                         <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
-                          <span className="block text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Batch Size</span>
+                          <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Batch Qty</span>
                           <span className="text-base font-black text-white">{p.totalDemand} PC</span>
                         </div>
                         <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
-                          <span className="block text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Target End</span>
+                          <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Target End</span>
                           <span className="text-base font-black text-indigo-400">DAY {p.deadline}</span>
                         </div>
                       </div>
@@ -339,12 +360,12 @@ const App: React.FC = () => {
                           const progress = ((p.totalDemand - remaining) / p.totalDemand) * 100;
                           return (
                             <div key={name} className="space-y-2">
-                              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                                <span className="text-slate-400">Step: {name}</span>
-                                <span className="text-indigo-400">{remaining} Pending</span>
+                              <div className="flex justify-between text-[10px] font-black uppercase">
+                                <span className="text-slate-400">{name} (Load {time})</span>
+                                <span className="text-indigo-400">{remaining} Left</span>
                               </div>
-                              <div className="h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                                <div className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                              <div className="h-2 bg-slate-950 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-500" style={{ width: `${progress}%` }}></div>
                               </div>
                             </div>
                           );
@@ -359,20 +380,15 @@ const App: React.FC = () => {
 
           {activeTab === 'analytics' && (
             <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30">
-              <div className="w-24 h-24 border-4 border-slate-800 rounded-full flex items-center justify-center border-t-indigo-500 animate-spin">
-                 <i className="fas fa-database text-4xl"></i>
-              </div>
-              <p className="text-xs font-black uppercase text-slate-400 tracking-[0.5em]">Syncing Nodes...</p>
+              <i className="fas fa-server text-6xl text-slate-800 animate-pulse"></i>
+              <p className="text-xs font-black uppercase tracking-[0.5em]">System Log Ready</p>
             </div>
           )}
-
         </div>
       </main>
 
-      {/* FIXED BOTTOM NAVIGATION - CENTERED PLUS */}
-      <nav className="flex-none h-28 bg-slate-900 border-t border-slate-800/50 relative shadow-[0_-20px_40px_rgba(0,0,0,0.5)] z-[100] pb-safe">
+      <nav className="flex-none h-28 bg-slate-900 border-t border-slate-800/50 relative z-[100] pb-safe shadow-2xl">
         <div className="grid grid-cols-5 h-full items-center px-4">
-          
           <button 
             onClick={() => setActiveTab('hub')}
             className={`col-span-2 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'hub' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
@@ -381,7 +397,6 @@ const App: React.FC = () => {
             <span className="text-[9px] font-black uppercase tracking-widest">Command</span>
           </button>
 
-          {/* ABSOLUTE CENTER BUTTON AREA */}
           <div className="flex justify-center -mt-10">
              <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="minimal" />
           </div>
@@ -391,12 +406,10 @@ const App: React.FC = () => {
             className={`col-span-2 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'specs' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
           >
             <i className="fas fa-folder-open text-2xl"></i>
-            <span className="text-[9px] font-black uppercase tracking-widest">Assets</span>
+            <span className="text-[9px] font-black uppercase tracking-widest">Blueprints</span>
           </button>
-
         </div>
       </nav>
-      
     </div>
   );
 };

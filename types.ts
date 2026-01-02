@@ -1,4 +1,3 @@
-
 export interface SubProductTime {
   [name: string]: number;
 }
@@ -35,5 +34,6 @@ export interface SchedulerState {
   schedule: ScheduleEntry[];
   currentDay: number;
   startDate: string; // ISO String
-  completedUnitKeys: string[]; // Identifiers for units completed today: "projectId-subName-startSession"
+  completedUnitKeys: string[]; // Identifiers for units completed today
+  blockedSessions: number[]; // Sessions of the currentDay that are manually blocked
 }

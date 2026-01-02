@@ -1,4 +1,3 @@
-
 import { Project, ProjectStatus, ScheduleEntry, SubProductTime } from './types';
 import { SESSIONS_PER_DAY, COOLDOWN, DEADLINE_BUFFER } from './constants';
 
@@ -41,7 +40,8 @@ class SchedulerProject {
 export function runScheduler(
   projects: Project[],
   statuses: ProjectStatus[],
-  startDay: number = 1
+  startDay: number = 1,
+  blockedSessions: number[] = []
 ): { schedule: ScheduleEntry[]; error?: string } {
   const schedProjects = projects.map(p => new SchedulerProject(p, statuses));
   let day = startDay;
@@ -50,9 +50,16 @@ export function runScheduler(
 
   try {
     while (schedProjects.some(p => !p.isComplete)) {
-      if (day > 100) throw new Error("Scheduling limit exceeded (100 days). This project mix might be impossible.");
+      if (day > 150) throw new Error("Scheduling limit exceeded (150 days). Overloaded queue.");
 
       const occupiedInDay = new Array(SESSIONS_PER_DAY + 1).fill(false);
+      
+      // APPLY MANUAL BLOCKS ONLY FOR THE STARTING DAY
+      if (day === startDay) {
+        blockedSessions.forEach(s => {
+          if (s >= 1 && s <= SESSIONS_PER_DAY) occupiedInDay[s] = true;
+        });
+      }
 
       for (let session = 1; session <= SESSIONS_PER_DAY; session++) {
         const currentGlobalSession = (day - 1) * SESSIONS_PER_DAY + session;
@@ -64,7 +71,7 @@ export function runScheduler(
           if (p.isComplete) continue;
           
           if (day > p.deadline) {
-             throw new Error(`Deadline missed for ${p.name} on Day ${day}`);
+             throw new Error(`CRITICAL: ${p.name} cannot meet Day ${p.deadline + DEADLINE_BUFFER} deadline.`);
           }
 
           const validSubs = Object.keys(p.remainingUnits).filter(s => {
@@ -74,9 +81,14 @@ export function runScheduler(
             // Constraint A: Cooldown
             if (p.moldReady[s] > currentGlobalSession) return false;
             
-            // Constraint B: Atomic Fit
+            // Constraint B: Atomic Fit (must fit in remaining free sessions today)
             const duration = p.durations[s];
             if (session + duration - 1 > SESSIONS_PER_DAY) return false;
+            
+            // Constraint C: Check for blocked sessions within the duration
+            for (let k = 0; k < duration; k++) {
+              if (occupiedInDay[session + k]) return false;
+            }
             
             return true;
           });
@@ -88,17 +100,16 @@ export function runScheduler(
 
         if (candidates.length === 0) continue;
 
-        // Urgency Sort
+        // Dynamic Urgency Priority
         candidates.sort((a, b) => {
-          const daysLeftA = Math.max(0.001, a.proj.deadline - (day - 1));
-          const daysLeftB = Math.max(0.001, b.proj.deadline - (day - 1));
+          const daysLeftA = Math.max(0.1, a.proj.deadline - (day - 1));
+          const daysLeftB = Math.max(0.1, b.proj.deadline - (day - 1));
           const priorityA = a.proj.totalSessionsRemaining / daysLeftA;
           const priorityB = b.proj.totalSessionsRemaining / daysLeftB;
           return priorityB - priorityA;
         });
 
         const best = candidates[0];
-        // Heuristic: Pick longest duration subproduct
         const bestS = best.validSubs.reduce((a, b) => 
           best.proj.durations[a] >= best.proj.durations[b] ? a : b
         );
