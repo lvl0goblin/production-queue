@@ -223,73 +223,74 @@ const App: React.FC = () => {
   }, [state.projects, state.statuses, state.currentDay]);
 
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 select-none overflow-hidden touch-none">
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-950 text-slate-100 select-none overflow-hidden touch-none">
       
-      <header className="flex-none h-24 flex items-center justify-between px-6 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 z-50 pt-safe">
+      {/* Header with Safe Area Handling */}
+      <header className="flex-none h-20 sm:h-24 flex items-center justify-between px-6 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 z-50 pt-safe">
         <div className="flex flex-col">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em]">Operational Unit</span>
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em]">FlowCore Unit</span>
+            <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></div>
           </div>
-          <h1 className="text-xl font-black tracking-tight italic flex items-baseline gap-2">
+          <h1 className="text-lg font-black tracking-tight italic flex items-baseline gap-2">
             {currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            <span className="text-indigo-500 font-mono text-base">DAY {state.currentDay}</span>
+            <span className="text-indigo-500 font-mono text-sm">D{state.currentDay}</span>
           </h1>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button 
             onClick={exportDailySchedule}
-            className="w-11 h-11 flex items-center justify-center rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 active:scale-90 transition-all"
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 active:scale-90 transition-all"
           >
-            <i className="fas fa-file-export text-sm"></i>
+            <i className="fas fa-file-export text-xs"></i>
           </button>
           <button 
             onClick={resetAll} 
-            className="w-11 h-11 flex items-center justify-center rounded-2xl bg-slate-800 text-slate-500 active:text-red-400 border border-slate-700 active:scale-90 transition-all"
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 text-slate-500 active:text-red-400 border border-slate-700 active:scale-90 transition-all"
           >
-            <i className="fas fa-power-off text-sm"></i>
+            <i className="fas fa-power-off text-xs"></i>
           </button>
         </div>
       </header>
 
       <main className="flex-1 overflow-hidden relative">
-        <div className="h-full overflow-y-auto custom-scrollbar p-5 pb-40 touch-pan-y">
+        <div className="h-full overflow-y-auto custom-scrollbar p-4 pb-32 touch-pan-y">
           
           {activeTab === 'hub' && (
-            <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="space-y-4 animate-in fade-in duration-500">
               
               {(error || criticalProjects.length > 0) && (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {error && (
-                    <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-3xl flex items-center gap-4">
-                      <i className="fas fa-triangle-exclamation text-red-500"></i>
-                      <p className="text-[11px] font-black text-red-200 uppercase">{error}</p>
+                    <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-2xl flex items-center gap-3">
+                      <i className="fas fa-triangle-exclamation text-red-500 text-xs"></i>
+                      <p className="text-[10px] font-black text-red-200 uppercase">{error}</p>
                     </div>
                   )}
                   {criticalProjects.map(p => (
-                    <div key={p.id} className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-3xl flex items-center gap-4">
-                      <i className="fas fa-stopwatch text-amber-500"></i>
-                      <p className="text-[11px] font-black text-amber-200 uppercase">{p.name} DEADLINE ALERT</p>
+                    <div key={p.id} className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-2xl flex items-center gap-3">
+                      <i className="fas fa-stopwatch text-amber-500 text-xs"></i>
+                      <p className="text-[10px] font-black text-amber-200 uppercase">{p.name} DEADLINE</p>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div className="bg-indigo-600/10 border-2 border-indigo-600/20 p-6 rounded-[2.5rem] flex items-center justify-between gap-6 shadow-2xl">
+              <div className="bg-indigo-600/10 border border-indigo-600/20 p-5 rounded-[2rem] flex items-center justify-between gap-4 shadow-xl">
                 <div className="flex-1">
-                  <h3 className="text-xs font-black uppercase text-white tracking-[0.2em] mb-1">Shift Progression</h3>
-                  <p className="text-[10px] text-indigo-300/60 font-bold leading-tight">Sync completed units to next day</p>
+                  <h3 className="text-[10px] font-black uppercase text-white tracking-[0.1em] mb-1">Shift Progression</h3>
+                  <p className="text-[9px] text-indigo-300/60 font-bold">Sync floor to next day</p>
                 </div>
                 <button 
                   onClick={advanceToNextDay}
-                  className="bg-indigo-600 active:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.93] transition-all"
+                  className="bg-indigo-600 active:bg-indigo-500 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-[0.93] transition-all"
                 >
-                  Start New Day
+                  Confirm Day
                 </button>
               </div>
 
-              <div className="h-[65vh] w-full relative">
+              <div className="h-[55dvh] w-full relative">
                 <GanttChart 
                   schedule={state.schedule} 
                   currentDay={state.currentDay} 
@@ -301,71 +302,68 @@ const App: React.FC = () => {
                 />
               </div>
 
-              <div className="p-4 bg-slate-900/40 rounded-3xl border border-slate-800">
-                <h5 className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3 ml-2">Override Legend</h5>
-                <div className="flex gap-6 px-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded bg-indigo-500/20 border border-indigo-500/40"></div>
-                    <span className="text-[10px] font-black text-slate-400">TAP SLOT TO BLOCK</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded bg-emerald-500 shadow-sm"></div>
-                    <span className="text-[10px] font-black text-slate-400">TAP OP TO FINISH</span>
-                  </div>
+              <div className="p-4 bg-slate-900/40 rounded-[1.5rem] border border-slate-800 flex justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded bg-indigo-500/30 border border-indigo-500/50"></div>
+                  <span className="text-[9px] font-black text-slate-500">BLOCK SLOT</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded bg-emerald-500"></div>
+                  <span className="text-[9px] font-black text-slate-500">FINISH OP</span>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'specs' && (
-            <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-              <h2 className="text-2xl font-black italic uppercase tracking-tighter ml-2">Project Queue</h2>
+            <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-500">
+              <h2 className="text-xl font-black italic uppercase tracking-tighter px-2">Production Queue</h2>
               {state.projects.length === 0 ? (
-                <div className="py-24 flex flex-col items-center justify-center opacity-30 text-center">
-                  <i className="fas fa-microchip text-7xl mb-6"></i>
-                  <p className="text-sm font-black uppercase tracking-[0.3em]">No active blueprints</p>
+                <div className="py-20 flex flex-col items-center justify-center opacity-30 text-center">
+                  <i className="fas fa-box-open text-5xl mb-4"></i>
+                  <p className="text-xs font-black uppercase tracking-[0.2em]">Queue Empty</p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {state.projects.map(p => (
-                    <div key={p.id} className="bg-slate-900/60 border border-slate-800 p-6 rounded-[2.5rem] relative">
-                      <div className="flex items-center justify-between mb-5">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl shadow-lg border border-white/5" style={{ backgroundColor: p.color }}></div>
-                          <h4 className="font-black text-xl text-white">{p.name}</h4>
+                    <div key={p.id} className="bg-slate-900/60 border border-slate-800 p-5 rounded-[2rem] relative">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg shadow-lg border border-white/5" style={{ backgroundColor: p.color }}></div>
+                          <h4 className="font-black text-lg text-white">{p.name}</h4>
                         </div>
                         <button 
                           onClick={() => confirm(`Wipe project ${p.name}?`) && deleteProject(p.id)}
-                          className="w-10 h-10 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500/50 active:text-red-500"
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500/10 text-red-500/50 active:text-red-500"
                         >
-                          <i className="fas fa-trash-alt"></i>
+                          <i className="fas fa-trash-alt text-xs"></i>
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 mb-6">
-                        <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
-                          <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Batch Qty</span>
-                          <span className="text-base font-black text-white">{p.totalDemand} PC</span>
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+                          <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Batch Size</span>
+                          <span className="text-xs font-black text-white">{p.totalDemand} PC</span>
                         </div>
-                        <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
-                          <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Target End</span>
-                          <span className="text-base font-black text-indigo-400">DAY {p.deadline}</span>
+                        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+                          <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Deadline</span>
+                          <span className="text-xs font-black text-indigo-400">DAY {p.deadline}</span>
                         </div>
                       </div>
 
-                      <div className="space-y-4 pt-4 border-t border-slate-800/50">
+                      <div className="space-y-3 pt-3 border-t border-slate-800/50">
                         {Object.entries(p.subTimes).map(([name, time]) => {
                           const status = state.statuses.find(s => s.projectId === p.id && s.subproductName === name);
                           const remaining = status ? status.unitsRemaining : 0;
                           const progress = ((p.totalDemand - remaining) / p.totalDemand) * 100;
                           return (
-                            <div key={name} className="space-y-2">
-                              <div className="flex justify-between text-[10px] font-black uppercase">
-                                <span className="text-slate-400">{name} (Load {time})</span>
+                            <div key={name} className="space-y-1">
+                              <div className="flex justify-between text-[9px] font-black uppercase">
+                                <span className="text-slate-500">{name} ({time}s)</span>
                                 <span className="text-indigo-400">{remaining} Left</span>
                               </div>
-                              <div className="h-2 bg-slate-950 rounded-full overflow-hidden">
-                                <div className="h-full bg-indigo-500" style={{ width: `${progress}%` }}></div>
+                              <div className="h-1.5 bg-slate-950 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-500 transition-all duration-700" style={{ width: `${progress}%` }}></div>
                               </div>
                             </div>
                           );
@@ -379,34 +377,36 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'analytics' && (
-            <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30">
-              <i className="fas fa-server text-6xl text-slate-800 animate-pulse"></i>
-              <p className="text-xs font-black uppercase tracking-[0.5em]">System Log Ready</p>
+            <div className="flex flex-col items-center justify-center py-32 gap-6 opacity-30">
+              <i className="fas fa-satellite-dish text-5xl text-slate-800 animate-pulse"></i>
+              <p className="text-[10px] font-black uppercase tracking-[0.4em]">Operations Link Active</p>
             </div>
           )}
         </div>
       </main>
 
-      <nav className="flex-none h-28 bg-slate-900 border-t border-slate-800/50 relative z-[100] pb-safe shadow-2xl">
+      {/* BOTTOM NAV FIXED FOR MOBILE BROWSER CHROME */}
+      <nav className="flex-none h-24 bg-slate-900 border-t border-slate-800/50 relative z-[100] pb-safe shadow-[0_-15px_30px_rgba(0,0,0,0.5)]">
         <div className="grid grid-cols-5 h-full items-center px-4">
           <button 
             onClick={() => setActiveTab('hub')}
-            className={`col-span-2 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'hub' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
+            className={`col-span-2 flex flex-col items-center gap-1 transition-all ${activeTab === 'hub' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}
           >
-            <i className="fas fa-layer-group text-2xl"></i>
-            <span className="text-[9px] font-black uppercase tracking-widest">Command</span>
+            <i className="fas fa-house-chimney text-xl"></i>
+            <span className="text-[8px] font-black uppercase tracking-widest">Command</span>
           </button>
 
-          <div className="flex justify-center -mt-10">
+          {/* ABSOLUTE CENTER BUTTON AREA */}
+          <div className="flex justify-center -mt-10 relative z-[110]">
              <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="minimal" />
           </div>
 
           <button 
             onClick={() => setActiveTab('specs')}
-            className={`col-span-2 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'specs' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
+            className={`col-span-2 flex flex-col items-center gap-1 transition-all ${activeTab === 'specs' ? 'text-indigo-400 scale-105' : 'text-slate-600'}`}
           >
-            <i className="fas fa-folder-open text-2xl"></i>
-            <span className="text-[9px] font-black uppercase tracking-widest">Blueprints</span>
+            <i className="fas fa-layer-group text-xl"></i>
+            <span className="text-[8px] font-black uppercase tracking-widest">Queue</span>
           </button>
         </div>
       </nav>
