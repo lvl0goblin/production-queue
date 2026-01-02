@@ -1,16 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Project, ProjectStatus, ScheduleEntry, SchedulerState } from './types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Project, ProjectStatus, SchedulerState, ScheduleEntry } from './types';
 import { runScheduler } from './engine';
-import { PROJECT_COLORS, SESSIONS_PER_DAY, COOLDOWN } from './constants';
+import { PROJECT_COLORS, SESSIONS_PER_DAY } from './constants';
 import GanttChart from './components/GanttChart';
 import ProjectForm from './components/ProjectForm';
 
-const STORAGE_KEY = 'shop_floor_scheduler_v4';
+const STORAGE_KEY = 'flowcore_mobile_v2';
 
 const App: React.FC = () => {
   const [state, setState] = useState<SchedulerState>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        return JSON.parse(saved) as SchedulerState;
+      } catch (e) {
+        console.error("Failed to parse stored shop state", e);
+      }
+    }
     return {
       projects: [],
       statuses: [],
@@ -21,18 +27,12 @@ const App: React.FC = () => {
     };
   });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'projects'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'hub' | 'specs' | 'analytics'>('hub');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
-
-  const handleReschedule = useCallback(() => {
-    const { schedule, error: schedError } = runScheduler(state.projects, state.statuses, state.currentDay);
-    setState(prev => ({ ...prev, schedule }));
-    setError(schedError || null);
-  }, [state.projects, state.statuses, state.currentDay]);
 
   const addProject = (p: Project) => {
     const newStatuses: ProjectStatus[] = Object.keys(p.subTimes).map(subName => ({
@@ -54,7 +54,7 @@ const App: React.FC = () => {
         schedule: schedule
       };
     });
-    setActiveTab('dashboard');
+    setActiveTab('hub');
   };
 
   const toggleUnitCompletion = (unitKey: string) => {
@@ -65,13 +65,6 @@ const App: React.FC = () => {
         : [...prev.completedUnitKeys, unitKey];
       return { ...prev, completedUnitKeys: newKeys };
     });
-  };
-
-  const resetAllData = () => {
-    if (window.confirm("CRITICAL ACTION: This will permanently wipe all projects and schedule data. Are you sure?")) {
-      localStorage.removeItem(STORAGE_KEY);
-      window.location.reload();
-    }
   };
 
   const advanceToNextDay = () => {
@@ -96,29 +89,76 @@ const App: React.FC = () => {
         );
         if (statusIdx !== -1) {
           updatedStatuses[statusIdx].unitsRemaining = Math.max(0, updatedStatuses[statusIdx].unitsRemaining - 1);
-          const globalFinish = (state.currentDay - 1) * SESSIONS_PER_DAY + unit.end;
-          updatedStatuses[statusIdx].moldReadySession = globalFinish + COOLDOWN;
         }
       }
     });
 
-    const nextDay = state.currentDay + 1;
-    const { schedule: nextSchedule, error: schedError } = runScheduler(state.projects, updatedStatuses, nextDay);
+    const completedProjectIds = state.projects
+      .filter(p => {
+        const projectStatuses = updatedStatuses.filter(s => s.projectId === p.id);
+        return projectStatuses.length > 0 && projectStatuses.every(s => s.unitsRemaining === 0);
+      })
+      .map(p => p.id);
 
-    if (schedError && schedError.toLowerCase().includes("deadline")) {
+    const finalProjects = state.projects.filter(p => !completedProjectIds.includes(p.id));
+    const finalStatuses = updatedStatuses.filter(s => !completedProjectIds.includes(s.projectId));
+
+    const nextDay = state.currentDay + 1;
+    const { schedule: nextSchedule, error: schedError } = runScheduler(finalProjects, finalStatuses, nextDay);
+
+    if (schedError) {
       setError(schedError);
-      alert(`CRITICAL ALERT: ${schedError}. You cannot start the next shift until you complete more tasks today to satisfy delivery deadlines.`);
       return;
     }
 
     setState(prev => ({
       ...prev,
       currentDay: nextDay,
-      statuses: updatedStatuses,
+      projects: finalProjects,
+      statuses: finalStatuses,
       schedule: nextSchedule,
       completedUnitKeys: [] 
     }));
     setError(null);
+  };
+
+  const exportDailySchedule = () => {
+    const todayEntries = state.schedule.filter(s => s.day === state.currentDay);
+    if (todayEntries.length === 0) {
+      alert("Nothing scheduled for today.");
+      return;
+    }
+
+    // Consolidated units logic for CSV
+    const consolidated: any[] = [];
+    todayEntries.forEach(entry => {
+      const last = consolidated[consolidated.length - 1];
+      if (last && last.projectId === entry.projectId && last.subName === entry.subproductName && entry.session === last.end + 1) {
+        last.end = entry.session;
+      } else {
+        consolidated.push({
+          start: entry.session,
+          end: entry.session,
+          projectId: entry.projectId,
+          projectName: entry.projectName,
+          subName: entry.subproductName
+        });
+      }
+    });
+
+    let csvContent = "Start Session,End Session,Project,Operation\n";
+    consolidated.forEach(row => {
+      csvContent += `${row.start},${row.end},"${row.projectName}","${row.subName}"\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `FlowCore_Day_${state.currentDay}_Schedule.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const deleteProject = (id: string) => {
@@ -132,226 +172,231 @@ const App: React.FC = () => {
         projects: updatedProjects,
         statuses: updatedStatuses,
         schedule: schedule
-      }
+      };
     });
   };
 
-  const currentDate = new Date(new Date(state.startDate).getTime() + (state.currentDay - 1) * 86400000);
+  const resetAll = () => {
+    if(confirm("Wipe all project data and start over?")) {
+      localStorage.removeItem(STORAGE_KEY);
+      window.location.reload();
+    }
+  };
+
+  const currentDate = useMemo(() => {
+    const d = new Date(state.startDate);
+    d.setDate(d.getDate() + (state.currentDay - 1));
+    return d;
+  }, [state.startDate, state.currentDay]);
+
+  const criticalProjects = useMemo(() => {
+    return state.projects.filter(p => {
+      const status = state.statuses.find(s => s.projectId === p.id && s.unitsRemaining > 0);
+      return status && p.deadline <= state.currentDay;
+    });
+  }, [state.projects, state.statuses, state.currentDay]);
 
   return (
-    <div className="min-h-screen flex flex-col font-sans overflow-hidden bg-slate-50">
+    <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 select-none overflow-hidden touch-none">
+      
       {/* Dynamic Header */}
-      <header className="bg-slate-900 text-white p-3 sm:p-5 shadow-2xl flex flex-col sm:flex-row justify-between items-center sticky top-0 z-[100] border-b border-slate-800 gap-3">
-        <div className="flex items-center justify-between w-full sm:w-auto">
-          <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-tr from-blue-500 to-indigo-600 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
-              <i className="fas fa-industry text-sm sm:text-lg"></i>
-            </div>
-            <h1 className="text-lg sm:text-xl font-black tracking-tighter uppercase">Production <span className="text-blue-400">Queue</span></h1>
+      <header className="flex-none h-24 flex items-center justify-between px-6 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 z-50 pt-safe">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em]">Operational Unit</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
           </div>
-          
-          <div className="flex items-center gap-2 lg:hidden">
-            <button 
-              onClick={resetAllData}
-              className="w-8 h-8 flex items-center justify-center bg-slate-800 text-red-400 rounded-lg border border-slate-700 active:scale-95 transition-all"
-              title="Reset System"
-            >
-              <i className="fas fa-power-off text-xs"></i>
-            </button>
-            <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="minimal" />
-          </div>
+          <h1 className="text-xl font-black tracking-tight italic flex items-baseline gap-2">
+            {currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            <span className="text-indigo-500 font-mono text-base">DAY {state.currentDay}</span>
+          </h1>
         </div>
         
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="flex-1 sm:flex-none bg-slate-800 px-4 py-1.5 sm:px-6 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-700 flex flex-col items-center">
-            <span className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-0.5 sm:mb-1 text-center text-nowrap">Live Shift Date</span>
-            <span className="font-mono font-black text-blue-400 text-xs sm:text-sm whitespace-nowrap">
-               {currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-          </div>
-
-          <div className="hidden lg:flex items-center gap-2">
-            <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="minimal" />
-            <button 
-              onClick={resetAllData}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-xl border border-slate-700 transition-all text-[10px] font-black uppercase tracking-widest"
-            >
-              <i className="fas fa-power-off"></i>
-              Reset
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={exportDailySchedule}
+            className="w-11 h-11 flex items-center justify-center rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 active:scale-90 transition-all"
+            title="Download CSV"
+          >
+            <i className="fas fa-file-export text-sm"></i>
+          </button>
+          <button 
+            onClick={resetAll} 
+            className="w-11 h-11 flex items-center justify-center rounded-2xl bg-slate-800 text-slate-500 active:text-red-400 border border-slate-700 active:scale-90 transition-all"
+          >
+            <i className="fas fa-power-off text-sm"></i>
+          </button>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Desktop Sidebar */}
-        <nav className="w-64 bg-white border-r border-slate-200 hidden lg:flex flex-col p-6 gap-3">
-          <button 
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-3 p-4 rounded-2xl transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-50 font-bold'}`}
-          >
-            <i className="fas fa-stream"></i> Production Hub
-          </button>
-          <button 
-            onClick={() => setActiveTab('projects')}
-            className={`flex items-center gap-3 p-4 rounded-2xl transition-all duration-200 ${activeTab === 'projects' ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-500 hover:bg-slate-50 font-bold'}`}
-          >
-            <i className="fas fa-database"></i> Specs & Units
-          </button>
-        </nav>
+      {/* Primary Viewport */}
+      <main className="flex-1 overflow-hidden relative">
+        <div className="h-full overflow-y-auto custom-scrollbar p-5 pb-40 touch-pan-y">
+          
+          {activeTab === 'hub' && (
+            <div className="space-y-6 animate-in fade-in duration-500">
+              
+              {/* Alert System */}
+              {(error || criticalProjects.length > 0) && (
+                <div className="space-y-3">
+                  {error && (
+                    <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-3xl flex items-center gap-4 shadow-lg">
+                      <i className="fas fa-triangle-exclamation text-red-500"></i>
+                      <p className="text-[11px] font-black text-red-200 uppercase leading-snug">{error}</p>
+                    </div>
+                  )}
+                  {criticalProjects.map(p => (
+                    <div key={p.id} className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-3xl flex items-center gap-4 shadow-lg">
+                      <i className="fas fa-stopwatch text-amber-500"></i>
+                      <p className="text-[11px] font-black text-amber-200 uppercase leading-snug">{p.name} DEADLINE EXPIRED</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-10">
-          {/* Mobile Tab Swiper */}
-          <div className="lg:hidden flex bg-white p-1 rounded-2xl border border-slate-200 mb-6 shadow-sm">
-            <button 
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'dashboard' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}
-            >
-              Hub
-            </button>
-            <button 
-              onClick={() => setActiveTab('projects')}
-              className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'projects' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}
-            >
-              Specs
-            </button>
+              {/* Action Bar */}
+              <div className="bg-indigo-600/10 border-2 border-indigo-600/20 p-6 rounded-[2.5rem] flex items-center justify-between gap-6 shadow-2xl shadow-indigo-950/20">
+                <div className="flex-1">
+                  <h3 className="text-xs font-black uppercase text-white tracking-[0.2em] mb-1">Shift Progression</h3>
+                  <p className="text-[10px] text-indigo-300/60 font-bold leading-tight">Advance to next operational session</p>
+                </div>
+                <button 
+                  onClick={advanceToNextDay}
+                  className="bg-indigo-600 active:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-600/40 active:scale-[0.93] transition-all"
+                >
+                  Start Day
+                </button>
+              </div>
+
+              {/* Data Cards */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900/40 border border-slate-800/60 p-5 rounded-[2rem] shadow-lg">
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Active Slots</span>
+                  <div className="text-4xl font-black text-white mt-2 font-mono">
+                    {state.schedule.filter(s => s.day === state.currentDay).length}
+                  </div>
+                </div>
+                <div className="bg-slate-900/40 border border-slate-800/60 p-5 rounded-[2rem] shadow-lg">
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Project Load</span>
+                  <div className="text-4xl font-black text-white mt-2 font-mono">{state.projects.length}</div>
+                </div>
+              </div>
+
+              {/* Gantt Area */}
+              <div className="h-[60vh] w-full relative">
+                <GanttChart 
+                  schedule={state.schedule} 
+                  currentDay={state.currentDay} 
+                  startDate={state.startDate}
+                  completedUnitKeys={state.completedUnitKeys}
+                  onToggleUnit={toggleUnitCompletion}
+                />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'specs' && (
+            <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+              <h2 className="text-2xl font-black italic uppercase tracking-tighter ml-2">Project Queue</h2>
+
+              {state.projects.length === 0 ? (
+                <div className="py-24 flex flex-col items-center justify-center opacity-30 text-center px-10">
+                  <i className="fas fa-microchip text-7xl mb-6"></i>
+                  <p className="text-sm font-black uppercase tracking-[0.3em] leading-relaxed">No active blueprints detected in system</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {state.projects.map(p => (
+                    <div key={p.id} className="bg-slate-900/60 border border-slate-800 p-6 rounded-[2.5rem] relative overflow-hidden group">
+                      <div className="flex items-center justify-between mb-5">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-white/5" style={{ backgroundColor: p.color }}></div>
+                          <h4 className="font-black text-xl tracking-tight text-white">{p.name}</h4>
+                        </div>
+                        <button 
+                          onClick={() => confirm(`Wipe project ${p.name}?`) && deleteProject(p.id)}
+                          className="w-10 h-10 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500/50 active:text-red-500"
+                        >
+                          <i className="fas fa-trash-alt"></i>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 mb-6">
+                        <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+                          <span className="block text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Batch Size</span>
+                          <span className="text-base font-black text-white">{p.totalDemand} PC</span>
+                        </div>
+                        <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+                          <span className="block text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Target End</span>
+                          <span className="text-base font-black text-indigo-400">DAY {p.deadline}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 pt-4 border-t border-slate-800/50">
+                        {Object.entries(p.subTimes).map(([name, time]) => {
+                          const status = state.statuses.find(s => s.projectId === p.id && s.subproductName === name);
+                          const remaining = status ? status.unitsRemaining : 0;
+                          const progress = ((p.totalDemand - remaining) / p.totalDemand) * 100;
+                          return (
+                            <div key={name} className="space-y-2">
+                              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                                <span className="text-slate-400">Step: {name}</span>
+                                <span className="text-indigo-400">{remaining} Pending</span>
+                              </div>
+                              <div className="h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                                <div className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30">
+              <div className="w-24 h-24 border-4 border-slate-800 rounded-full flex items-center justify-center border-t-indigo-500 animate-spin">
+                 <i className="fas fa-database text-4xl"></i>
+              </div>
+              <p className="text-xs font-black uppercase text-slate-400 tracking-[0.5em]">Syncing Nodes...</p>
+            </div>
+          )}
+
+        </div>
+      </main>
+
+      {/* FIXED BOTTOM NAVIGATION - CENTERED PLUS */}
+      <nav className="flex-none h-28 bg-slate-900 border-t border-slate-800/50 relative shadow-[0_-20px_40px_rgba(0,0,0,0.5)] z-[100] pb-safe">
+        <div className="grid grid-cols-5 h-full items-center px-4">
+          
+          <button 
+            onClick={() => setActiveTab('hub')}
+            className={`col-span-2 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'hub' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
+          >
+            <i className="fas fa-layer-group text-2xl"></i>
+            <span className="text-[9px] font-black uppercase tracking-widest">Command</span>
+          </button>
+
+          {/* ABSOLUTE CENTER BUTTON AREA */}
+          <div className="flex justify-center -mt-10">
+             <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="minimal" />
           </div>
 
-          {error && (
-            <div className="mb-6 sm:mb-10 bg-red-50 border-l-4 border-red-500 p-4 sm:p-6 rounded-2xl shadow-sm flex items-start gap-4 sm:gap-5 animate-in slide-in-from-top-4">
-              <div className="bg-red-500 text-white w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/30">
-                <i className="fas fa-exclamation-triangle text-sm sm:text-base"></i>
-              </div>
-              <div>
-                <h3 className="text-red-900 font-black uppercase text-[10px] sm:text-xs tracking-widest">Constraint Alert</h3>
-                <p className="text-red-700 font-medium text-xs sm:text-sm mt-1">{error}</p>
-              </div>
-            </div>
-          )}
+          <button 
+            onClick={() => setActiveTab('specs')}
+            className={`col-span-2 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'specs' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
+          >
+            <i className="fas fa-folder-open text-2xl"></i>
+            <span className="text-[9px] font-black uppercase tracking-widest">Assets</span>
+          </button>
 
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6 sm:space-y-10 max-w-[1700px] mx-auto pb-20">
-              {/* Action Hub */}
-              <div className="bg-white p-6 sm:p-10 rounded-3xl sm:rounded-[2.5rem] shadow-xl border border-slate-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 sm:gap-10">
-                <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-2 sm:mb-3">
-                      <div className="px-3 py-1 bg-blue-100 text-blue-600 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest border border-blue-200">Shift Window Open</div>
-                      <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tighter">Day {state.currentDay} Command</h2>
-                    </div>
-                    <p className="text-slate-500 text-sm sm:text-lg font-medium">Finalize today's production before moving to the next shift.</p>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-3 sm:gap-5 w-full xl:w-auto">
-                  <div className="hidden sm:block">
-                    <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="outlined" />
-                  </div>
-                  <button 
-                    onClick={advanceToNextDay}
-                    className="flex-1 xl:flex-none px-6 py-4 sm:px-10 sm:py-5 bg-slate-900 text-white rounded-2xl sm:rounded-[1.5rem] font-black uppercase text-[10px] sm:text-[11px] tracking-[0.2em] hover:bg-blue-600 transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-3 sm:gap-4 group"
-                  >
-                    <i className="fas fa-calendar-check text-blue-400"></i>
-                    Next Day
-                  </button>
-                </div>
-              </div>
-
-              <GanttChart 
-                schedule={state.schedule} 
-                currentDay={state.currentDay} 
-                startDate={state.startDate}
-                completedUnitKeys={state.completedUnitKeys}
-                onToggleUnit={toggleUnitCompletion}
-              />
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-10">
-                <div className="bg-white p-6 sm:p-8 rounded-3xl sm:rounded-[2rem] shadow-sm border border-slate-200">
-                    <h3 className="font-black text-slate-900 mb-6 flex items-center gap-4 uppercase text-[10px] sm:text-xs tracking-widest">
-                        <i className="fas fa-chart-line text-blue-500"></i> Fulfillment Health
-                    </h3>
-                    <div className="space-y-6">
-                        {state.projects.length === 0 ? (
-                          <p className="text-slate-400 text-sm font-bold italic">No active projects to track.</p>
-                        ) : state.projects.map(p => {
-                            const stats = state.statuses.filter(s => s.projectId === p.id);
-                            const totalUnits = p.totalDemand * Object.keys(p.subTimes).length;
-                            const remaining = stats.reduce((acc, s) => acc + s.unitsRemaining, 0);
-                            const progress = totalUnits > 0 ? Math.round(((totalUnits - remaining) / totalUnits) * 100) : 0;
-                            
-                            return (
-                                <div key={p.id}>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="font-bold text-slate-700 text-sm">{p.name}</span>
-                                        <span className="text-xs font-black text-slate-400">{progress}%</span>
-                                    </div>
-                                    <div className="w-full bg-slate-100 rounded-full h-2 sm:h-3 overflow-hidden">
-                                        <div 
-                                            className="h-full transition-all duration-1000 ease-out rounded-full" 
-                                            style={{ width: `${progress}%`, backgroundColor: p.color }}
-                                        ></div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                <div className="bg-slate-900 p-6 sm:p-8 rounded-3xl sm:rounded-[2rem] shadow-2xl text-white flex flex-col justify-center">
-                    <div className="flex items-center gap-4 sm:gap-5 mb-4 sm:mb-5">
-                       <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
-                         <i className="fas fa-shield-alt text-blue-400 text-xl sm:text-2xl"></i>
-                       </div>
-                       <h3 className="text-xl sm:text-2xl font-black text-white tracking-tighter">Deadline Safety</h3>
-                    </div>
-                    <p className="text-slate-400 font-medium text-sm sm:text-lg leading-relaxed">
-                      If your current progress puts a future project at risk, the system will prevent you from moving to the next shift.
-                    </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'projects' && (
-            <div className="space-y-6 sm:space-y-10 pb-20">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tighter">Project Database</h2>
-                  <div className="hidden sm:block">
-                    <ProjectForm onAdd={addProject} availableColors={PROJECT_COLORS} variant="outlined" />
-                  </div>
-                </div>
-                {state.projects.length === 0 ? (
-                  <div className="bg-white p-12 sm:p-20 rounded-[3rem] border border-dashed border-slate-200 text-center">
-                    <i className="fas fa-box-open text-5xl text-slate-100 mb-6"></i>
-                    <p className="text-slate-400 font-bold">Your project database is empty.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
-                      {state.projects.map(p => (
-                          <div key={p.id} className="bg-white rounded-3xl sm:rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden hover:shadow-2xl transition-all">
-                              <div className="h-2" style={{ backgroundColor: p.color }}></div>
-                              <div className="p-6 sm:p-8">
-                                  <div className="flex justify-between items-start mb-6">
-                                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{p.name}</h3>
-                                      <button onClick={() => deleteProject(p.id)} className="text-slate-300 hover:text-red-500 transition-all p-2"><i className="fas fa-trash-alt"></i></button>
-                                  </div>
-                                  <div className="space-y-3 sm:space-y-4">
-                                      <div className="flex justify-between text-sm items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                          <span className="text-slate-400 font-bold uppercase text-[9px] sm:text-[10px] tracking-widest">Sets Ordered</span>
-                                          <span className="font-black text-slate-900 text-base sm:text-lg">{p.totalDemand}</span>
-                                      </div>
-                                      <div className="flex justify-between text-sm items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                          <span className="text-slate-400 font-bold uppercase text-[9px] sm:text-[10px] tracking-widest">Target</span>
-                                          <span className="font-black text-slate-900 text-base sm:text-lg">Day {p.deadline}</span>
-                                      </div>
-                                  </div>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-                )}
-            </div>
-          )}
-        </main>
-      </div>
+        </div>
+      </nav>
+      
     </div>
   );
 };
